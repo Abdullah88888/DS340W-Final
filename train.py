@@ -21,6 +21,9 @@ from pu_loss_mod import pu_loss_auto as pu_loss
 
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
+from transformers import MobileBertTokenizer, MobileBertForSequenceClassification
+from transformers import ElectraTokenizer, ElectraForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 if torch.cuda.device_count() > 1: # self added
     ctx = multiprocessing.get_context('spawn') # self added
@@ -85,6 +88,7 @@ def train(model: nn.Module, optimizer, device: str, loader: DataLoader, desc='Tr
             args.count_iter += 1 # self added: counter++
             texts, masks, labels = texts.to(device), masks.to(device), labels.to(device)
             batch_size = texts.shape[0]
+            
 
             optimizer.zero_grad()
             results = model(texts, attention_mask=masks, labels=labels) # self added: for changed model output type
@@ -106,6 +110,8 @@ def train(model: nn.Module, optimizer, device: str, loader: DataLoader, desc='Tr
                 # save sentence lengths to folder
                 args.sentence_lengths.append(sentence_length.cpu())
             loss.backward()
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             batch_accuracy,_,_,_,_ = accuracy_sum(logits, labels) # disregard stat info
@@ -268,7 +274,12 @@ def run(max_epochs=None,
     elif model_name in ['xlnet-base-cased']:
         tokenizer = XLNetTokenizer.from_pretrained(model_path)
         model = XLNetForSequenceClassification.from_pretrained(model_path).to(device)
-    # elif model_name in ['multi-qa-MiniLM-L6-cos-v1']:
+    elif model_name in ['google/mobilebert-uncased']:
+        tokenizer = MobileBertTokenizer.from_pretrained('google/mobilebert-uncased')
+        model = MobileBertForSequenceClassification.from_pretrained('google/mobilebert-uncased').to(device)
+    elif model_name in ['facebook/galactica-1.3b']:
+        tokenizer = AutoTokenizer.from_pretrained('facebook/galactica-1.3b') # Adjust the model name as needed
+        model = AutoModelForSequenceClassification.from_pretrained('facebook/galactica-1.3b').to(device)
     else:
         print(f'Loading {model_name} via auto-loader...')
         tokenizer = AutoTokenizer.from_pretrained(model_path)
